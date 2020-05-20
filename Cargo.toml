@@ -9,11 +9,12 @@ edition = "2018"
 [dependencies]
 async-std = "1.0"
 cidr = "0.1"
-csv = "1"
+csv = "1.1.3"
 env_logger = "0.7.1"
-futures = "0.3.1"
-libp2p = { git = "https://github.com/mxinden/rust-libp2p", branch = "disjoint-paths-2" }
-libp2p-kad = { git = "https://github.com/mxinden/rust-libp2p", branch = "disjoint-paths-2" }
+futures = "0.3.5"
+libp2p = { git = "https://github.com/fluencelabs/rust-libp2p", branch = "trust_graph_libp2p_git_fix" }
+libp2p-kad = { git = "https://github.com/fluencelabs/rust-libp2p", branch = "trust_graph_libp2p_git_fix" }
+trust-graph = { git = "https://github.com/fluencelabs/fluence", branch = "trust_graph_libp2p_git_fix" }
 log = "0.4.1"
 prometheus = "0.7"
 void = "1.0.2"
@@ -23,8 +24,11 @@ ctrlc = "3"
 structopt = "0.3"
 futures-timer = "3"
 maxminddb = "*"
+serde = "1.0.110"
 
 # [patch."https://github.com/mxinden/rust-libp2p"]
 # libp2p = { path = "/home/mxinden/code/github.com/libp2p/rust-libp2p" }
 # libp2p-kad = { path = "/home/mxinden/code/github.com/libp2p/rust-libp2p/protocols/kad" }
 
+#[patch.crates-io]
+#serde = { version = "1.0.110" }

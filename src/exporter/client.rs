@@ -1,9 +1,9 @@
 use futures::prelude::*;
+use libp2p::identity::PublicKey;
 use libp2p::{
     core::{
-        self, connection::ConnectionLimit, either::EitherError, either::EitherOutput,
-        multiaddr::Protocol, muxing::StreamMuxerBox, transport::boxed::Boxed, transport::Transport,
-        upgrade, Multiaddr,
+        self, either::EitherError, either::EitherOutput, multiaddr::Protocol,
+        muxing::StreamMuxerBox, transport::boxed::Boxed, transport::Transport, upgrade, Multiaddr,
     },
     dns,
     identify::{Identify, IdentifyEvent},
@@ -12,7 +12,10 @@ use libp2p::{
     mplex, noise,
     ping::{Ping, PingConfig, PingEvent},
     secio,
-    swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters, SwarmBuilder},
+    swarm::{
+        DialError, NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters,
+        SwarmBuilder,
+    },
     tcp, yamux, InboundUpgradeExt, NetworkBehaviour, OutboundUpgradeExt, PeerId, Swarm,
 };
 use std::{
@@ -23,6 +26,7 @@ use std::{
     time::Duration,
     usize,
 };
+use trust_graph::TrustGraph;
 
 mod global_only;
 
@@ -32,13 +36,16 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(mut bootnode: Multiaddr, use_disjoint_paths: bool) -> Result<Client, Box<dyn Error>> {
+    pub fn new(
+        mut bootnode: Multiaddr,
+        use_disjoint_paths: bool,
+    ) -> Result<Client, Box<dyn Error>> {
         // Create a random key for ourselves.
         let local_key = Keypair::generate_ed25519();
         let local_peer_id = PeerId::from(local_key.public());
 
         let behaviour = MyBehaviour::new(local_key.clone(), use_disjoint_paths)?;
-        let transport = build_transport(local_key);
+        let transport = build_transport(local_key.clone());
         let mut swarm = SwarmBuilder::new(transport, behaviour, local_peer_id)
             .incoming_connection_limit(10)
             .outgoing_connection_limit(10)
@@ -53,8 +60,17 @@ impl Client {
             panic!("expected peer id");
         };
 
-        swarm.kademlia.add_address(&bootnode_peer_id, bootnode);
-        swarm.kademlia.bootstrap();
+        let public = match local_key.public() {
+            PublicKey::Ed25519(pk) => pk,
+            _ => unreachable!("generate_ed25519 was used"),
+        };
+
+        swarm
+            .kademlia
+            .add_address(&bootnode_peer_id, bootnode, public);
+        if let Err(err) = swarm.kademlia.bootstrap() {
+            log::error!("Bootstrap failed: {}", err);
+        }
 
         Ok(Client {
             swarm,
@@ -66,7 +82,7 @@ impl Client {
         self.swarm.kademlia.get_closest_peers(peer_id);
     }
 
-    pub fn dial(&mut self, peer_id: &PeerId) -> Result<bool, ConnectionLimit> {
+    pub fn dial(&mut self, peer_id: &PeerId) -> Result<(), DialError> {
         Swarm::dial(&mut self.swarm, peer_id)
     }
 }
@@ -125,9 +141,16 @@ impl MyBehaviour {
         // kind: PermissionDenied, error: "len > max" })`
         kademlia_config.set_max_packet_size(8000);
         if use_disjoint_paths {
-            kademlia_config.use_disjoint_path_queries();
+            log::warn!("Disjoint paths aren't supported yet");
+            // kademlia_config.use_disjoint_path_queries();
         }
-        let kademlia = Kademlia::with_config(local_peer_id, store, kademlia_config);
+        let trust = TrustGraph::default();
+        let kp = match &local_key {
+            Keypair::Ed25519(kp) => kp,
+            _ => unreachable!("only ed25519 is supported"),
+        };
+        let kademlia =
+            Kademlia::with_config(kp.clone(), local_peer_id, store, kademlia_config, trust);
 
         let ping = Ping::new(PingConfig::new().with_keep_alive(true));
 
@@ -184,7 +207,9 @@ fn build_transport(keypair: Keypair) -> Boxed<(PeerId, StreamMuxerBox), impl Err
     let global_only_tcp = global_only::GlobalIpOnly::new(tcp);
     let transport = dns::DnsConfig::new(global_only_tcp).unwrap();
 
-    let noise_keypair = noise::Keypair::new().into_authentic(&keypair).unwrap();
+    let noise_keypair = noise::Keypair::<noise::X25519>::new()
+        .into_authentic(&keypair)
+        .unwrap();
     let noise_config = noise::NoiseConfig::ix(noise_keypair);
     let secio_config = secio::SecioConfig::new(keypair).max_frame_len(1024 * 1024);
 

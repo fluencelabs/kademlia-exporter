@@ -4,7 +4,7 @@ use futures::prelude::*;
 use futures_timer::Delay;
 use libp2p::{
     identify::IdentifyEvent,
-    kad::{GetClosestPeersOk, KademliaEvent},
+    kad::{GetClosestPeersOk, KademliaEvent, QueryResult},
     multiaddr::{Multiaddr, Protocol},
     ping::{PingEvent, PingSuccess},
     PeerId,
@@ -74,8 +74,10 @@ impl Exporter {
             })
             .collect();
 
-        let nodes_to_probe_periodically =
-            dhts.into_iter().map(|(name, _, _)| (name, vec![])).collect();
+        let nodes_to_probe_periodically = dhts
+            .into_iter()
+            .map(|(name, _, _)| (name, vec![]))
+            .collect();
 
         Ok(Exporter {
             clients,
@@ -163,68 +165,70 @@ impl Exporter {
                 }
             },
             client::Event::Kademlia(event) => match *event {
-                KademliaEvent::BootstrapResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "bootstrap"])
-                        .inc();
-                }
-                KademliaEvent::GetClosestPeersResult(res) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "get_closest_peers"])
-                        .inc();
+                KademliaEvent::QueryResult { result, .. } => match result {
+                    QueryResult::Bootstrap(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "bootstrap"])
+                            .inc();
+                    }
+                    QueryResult::GetClosestPeers(res) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "get_closest_peers"])
+                            .inc();
 
-                    // Record lookup latency.
-                    let result_label = if res.is_ok() { "ok" } else { "error" };
-                    let peer_id = PeerId::from_bytes(match res {
-                        Ok(GetClosestPeersOk { key, .. }) => key,
-                        Err(err) => err.into_key(),
-                    })
-                    .unwrap();
-                    let duration =
-                        Instant::now() - self.in_flight_lookups.remove(&peer_id).unwrap();
-                    self.metrics
-                        .random_node_lookup_duration
-                        .with_label_values(&[&name, result_label])
-                        .observe(duration.as_secs_f64());
-                }
-                KademliaEvent::GetProvidersResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "get_providers"])
-                        .inc();
-                }
-                KademliaEvent::StartProvidingResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "start_providing"])
-                        .inc();
-                }
-                KademliaEvent::RepublishProviderResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "republish_provider"])
-                        .inc();
-                }
-                KademliaEvent::GetRecordResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "get_record"])
-                        .inc();
-                }
-                KademliaEvent::PutRecordResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "put_record"])
-                        .inc();
-                }
-                KademliaEvent::RepublishRecordResult(_) => {
-                    self.metrics
-                        .event_counter
-                        .with_label_values(&[&name, "kad", "republish_record"])
-                        .inc();
-                }
+                        // Record lookup latency.
+                        let result_label = if res.is_ok() { "ok" } else { "error" };
+                        let peer_id = PeerId::from_bytes(match res {
+                            Ok(GetClosestPeersOk { key, .. }) => key,
+                            Err(err) => err.into_key(),
+                        })
+                        .unwrap();
+                        let duration =
+                            Instant::now() - self.in_flight_lookups.remove(&peer_id).unwrap();
+                        self.metrics
+                            .random_node_lookup_duration
+                            .with_label_values(&[&name, result_label])
+                            .observe(duration.as_secs_f64());
+                    }
+                    QueryResult::GetProviders(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "get_providers"])
+                            .inc();
+                    }
+                    QueryResult::StartProviding(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "start_providing"])
+                            .inc();
+                    }
+                    QueryResult::RepublishProvider(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "republish_provider"])
+                            .inc();
+                    }
+                    QueryResult::GetRecord(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "get_record"])
+                            .inc();
+                    }
+                    QueryResult::PutRecord(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "put_record"])
+                            .inc();
+                    }
+                    QueryResult::RepublishRecord(_) => {
+                        self.metrics
+                            .event_counter
+                            .with_label_values(&[&name, "kad", "republish_record"])
+                            .inc();
+                    }
+                },
                 // Note: Do not interpret Discovered event as a proof of a node
                 // being online.
                 KademliaEvent::Discovered { .. } => {
@@ -320,7 +324,6 @@ impl Exporter {
         None
     }
 }
-
 impl Future for Exporter {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, ctx: &mut Context) -> Poll<Self::Output> {
