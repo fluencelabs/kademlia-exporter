@@ -1,3 +1,6 @@
 /target
 **/*.rs.bk
 .assets/cidrs.csv
+data/
+.idea/
+.DS_Store

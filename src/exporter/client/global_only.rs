@@ -12,6 +12,7 @@ pub struct GlobalIpOnly<T> {
     inner: T,
 }
 
+#[allow(dead_code)]
 impl<T> GlobalIpOnly<T> {
     pub fn new(transport: T) -> Self {
         GlobalIpOnly { inner: transport }

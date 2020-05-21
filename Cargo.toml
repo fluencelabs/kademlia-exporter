@@ -16,7 +16,7 @@ libp2p = { git = "https://github.com/fluencelabs/rust-libp2p", branch = "trust_g
 libp2p-kad = { git = "https://github.com/fluencelabs/rust-libp2p", branch = "trust_graph_libp2p_git_fix" }
 trust-graph = { git = "https://github.com/fluencelabs/fluence", branch = "trust_graph_libp2p_git_fix" }
 log = "0.4.1"
-prometheus = "0.7"
+prometheus = "0.9.0"
 void = "1.0.2"
 tide = "0.6"
 exit-future = "0.2"
@@ -29,6 +29,3 @@ serde = "1.0.110"
 # [patch."https://github.com/mxinden/rust-libp2p"]
 # libp2p = { path = "/home/mxinden/code/github.com/libp2p/rust-libp2p" }
 # libp2p-kad = { path = "/home/mxinden/code/github.com/libp2p/rust-libp2p/protocols/kad" }
-
-#[patch.crates-io]
-#serde = { version = "1.0.110" }

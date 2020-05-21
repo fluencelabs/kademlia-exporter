@@ -77,12 +77,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut buffer = vec![];
                 let encoder = TextEncoder::new();
                 let metric_families = req.state().gather();
-                log::info!(
-                    "Request {}: {} metrics: {:?}",
-                    req.uri(),
-                    metric_families.len(),
-                    metric_families
-                );
+                // log::info!(
+                //     "Request {}: {} metrics: {:?}",
+                //     req.uri(),
+                //     metric_families.len(),
+                //     metric_families
+                // );
                 encoder.encode(&metric_families, &mut buffer).unwrap();
 
                 String::from_utf8(buffer).unwrap()

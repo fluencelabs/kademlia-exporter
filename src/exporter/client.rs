@@ -239,6 +239,7 @@ pub fn build_transport_tcp(
         .timeout(socket_timeout)
 }
 
+#[allow(dead_code)]
 fn build_transport(keypair: Keypair) -> Boxed<(PeerId, StreamMuxerBox), impl Error> {
     let tcp = tcp::TcpConfig::new().nodelay(true);
     // Ignore any non global IP addresses. Given the amount of private IP
