@@ -7,10 +7,12 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 pub struct Db {
+    // Cloud provider name to IPs
     providers: HashMap<String, Vec<Ipv4Cidr>>,
 }
 
 impl Db {
+    /// Read database from file
     pub fn new(path: PathBuf) -> Result<Self, Box<dyn Error>> {
         let mut providers = HashMap::<String, Vec<Ipv4Cidr>>::new();
 
@@ -30,6 +32,7 @@ impl Db {
         Ok(Db { providers })
     }
 
+    /// Get cloud provider name that corresponds to `addr`
     pub fn get_provider(&self, addr: Ipv4Addr) -> Option<String> {
         for (provider, cidrs) in self.providers.iter() {
             for cidr in cidrs.iter() {

@@ -19,16 +19,16 @@ mod exporter;
     about = "Monitor the state of a Kademlia Dht."
 )]
 struct Opt {
-    #[structopt(long)]
+    #[structopt(long, name = "custom name for dht node")]
     dht_name: Vec<String>,
-    #[structopt(long)]
+    #[structopt(long, name = "multiaddr of a dht node")]
     dht_bootnode: Vec<Multiaddr>,
     #[structopt(long)]
     dht_use_disjoint_paths: Vec<bool>,
 
     #[structopt(long)]
     max_mind_db: Option<PathBuf>,
-    #[structopt(long)]
+    #[structopt(long, name = "Path to .csv containing IP to cloud provider name")]
     cloud_provider_db: Option<PathBuf>,
 }
 
@@ -57,17 +57,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cloud_provider_db = opt
         .cloud_provider_db
         .map(|path| cloud_provider_db::Db::new(path).expect("Failed to parse cloud provider db."));
-    let exporter = exporter::Exporter::new(
-        opt.dht_name
-            .into_iter()
-            .zip(opt.dht_bootnode.into_iter())
-            .zip(opt.dht_use_disjoint_paths.into_iter())
-            .map(|((name, bootnode), disjoint)| (name, bootnode, disjoint))
-            .collect(),
-        ip_db,
-        cloud_provider_db,
-        &registry,
-    )?;
+    let dhts: Vec<(String, Multiaddr, bool)> = opt
+        .dht_name
+        .into_iter()
+        .zip(opt.dht_bootnode.into_iter())
+        // .zip(opt.dht_use_disjoint_paths.into_iter())
+        .map(|(name, bootnode)| (name, bootnode, false))
+        .collect();
+
+    log::info!("dhts: {:?}", dhts);
+
+    let exporter = exporter::Exporter::new(dhts, ip_db, cloud_provider_db, &registry)?;
 
     let exit_clone = exit.clone();
     let metrics_server = std::thread::spawn(move || {
@@ -77,6 +77,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let mut buffer = vec![];
                 let encoder = TextEncoder::new();
                 let metric_families = req.state().gather();
+                log::info!(
+                    "Request {}: {} metrics: {:?}",
+                    req.uri(),
+                    metric_families.len(),
+                    metric_families
+                );
                 encoder.encode(&metric_families, &mut buffer).unwrap();
 
                 String::from_utf8(buffer).unwrap()

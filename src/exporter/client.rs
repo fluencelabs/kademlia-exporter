@@ -1,17 +1,16 @@
 use futures::prelude::*;
-use libp2p::identity::PublicKey;
 use libp2p::{
     core::{
-        self, either::EitherError, either::EitherOutput, multiaddr::Protocol,
+        self, either::EitherError, either::EitherOutput, multiaddr::Protocol, muxing::StreamMuxer,
         muxing::StreamMuxerBox, transport::boxed::Boxed, transport::Transport, upgrade, Multiaddr,
     },
     dns,
     identify::{Identify, IdentifyEvent},
-    identity::Keypair,
+    identity::{Keypair, PublicKey},
     kad::{record::store::MemoryStore, Kademlia, KademliaConfig, KademliaEvent},
     mplex, noise,
     ping::{Ping, PingConfig, PingEvent},
-    secio,
+    secio::{self, SecioConfig},
     swarm::{
         DialError, NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters,
         SwarmBuilder,
@@ -45,7 +44,7 @@ impl Client {
         let local_peer_id = PeerId::from(local_key.public());
 
         let behaviour = MyBehaviour::new(local_key.clone(), use_disjoint_paths)?;
-        let transport = build_transport(local_key.clone());
+        let transport = build_transport_tcp(local_key.clone(), Duration::from_secs(5));
         let mut swarm = SwarmBuilder::new(transport, behaviour, local_peer_id)
             .incoming_connection_limit(10)
             .outgoing_connection_limit(10)
@@ -155,7 +154,7 @@ impl MyBehaviour {
         let ping = Ping::new(PingConfig::new().with_keep_alive(true));
 
         let user_agent = "substrate-node/v2.0.0-e3245d49d-x86_64-linux-gnu (unknown)".to_string();
-        let proto_version = "/substrate/1.0".to_string();
+        let proto_version = "/fluence/faas/1.0.0".to_string();
         let identify = Identify::new(proto_version, user_agent, local_key.public());
 
         Ok(MyBehaviour {
@@ -197,6 +196,47 @@ impl NetworkBehaviourEventProcess<KademliaEvent> for MyBehaviour {
     fn inject_event(&mut self, event: KademliaEvent) {
         self.event_buffer.push(Event::Kademlia(Box::new(event)));
     }
+}
+
+pub fn build_transport_tcp(
+    key_pair: Keypair,
+    socket_timeout: Duration,
+) -> impl Transport<
+    Output = (
+        PeerId,
+        impl StreamMuxer<
+                OutboundSubstream = impl Send,
+                Substream = impl Send,
+                Error = impl Into<std::io::Error>,
+            > + Send
+            + Sync,
+    ),
+    Error = impl std::error::Error + Send,
+    Listener = impl Send,
+    Dial = impl Send,
+    ListenerUpgrade = impl Send,
+> + Clone {
+    let multiplex = {
+        let mut mplex = libp2p::mplex::MplexConfig::default();
+        mplex.max_substreams(1024 * 1024);
+        let mut yamux = libp2p::yamux::Config::default();
+        yamux.set_max_num_streams(1024 * 1024);
+        core::upgrade::SelectUpgrade::new(yamux, mplex)
+    };
+    let secio = SecioConfig::new(key_pair);
+
+    let transport = {
+        let tcp = libp2p::tcp::TcpConfig::new().nodelay(true);
+        let tcp = dns::DnsConfig::new(tcp).expect("Can't build DNS");
+        let websocket = libp2p::websocket::WsConfig::new(tcp.clone());
+        tcp.or_transport(websocket)
+    };
+
+    transport
+        .upgrade(core::upgrade::Version::V1)
+        .authenticate(secio)
+        .multiplex(multiplex)
+        .timeout(socket_timeout)
 }
 
 fn build_transport(keypair: Keypair) -> Boxed<(PeerId, StreamMuxerBox), impl Error> {
